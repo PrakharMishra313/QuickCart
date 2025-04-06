@@ -1,59 +1,81 @@
 'use client'
-import { productsDummyData, userDummyData } from "@/assets/assets";
-import { useUser } from "@clerk/nextjs";
+import { productsDummyData } from "@/assets/assets";
+import { useAuth, useUser } from "@clerk/nextjs";
+import axios from "axios";
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
+import toast from "react-hot-toast";
 
 export const AppContext = createContext();
 
 export const useAppContext = () => {
-    return useContext(AppContext)
-}
+    return useContext(AppContext);
+};
 
 export const AppContextProvider = (props) => {
 
-    const currency = process.env.NEXT_PUBLIC_CURRENCY
-    const router = useRouter()
+    const currency = process.env.NEXT_PUBLIC_CURRENCY;
+    const router = useRouter();
 
-    const {user} = useUser();
+    const { user } = useUser();
+    const { getToken } = useAuth();
 
-    const [products, setProducts] = useState([])
-    const [userData, setUserData] = useState(false)
-    const [isSeller, setIsSeller] = useState(true)
-    const [cartItems, setCartItems] = useState({})
+    const [products, setProducts] = useState([]);
+    const [userData, setUserData] = useState(false);
+    const [isSeller, setIsSeller] = useState(false);
+    const [cartItems, setCartItems] = useState({});
 
     const fetchProductData = async () => {
-        setProducts(productsDummyData)
-    }
+        setProducts(productsDummyData);
+    };
 
     const fetchUserData = async () => {
-        setUserData(userDummyData)
-    }
+        try {
+            if (user?.publicMetadata?.role === 'seller') {
+                setIsSeller(true);
+            } else {
+                setIsSeller(false);
+            }
+
+            const token = await getToken();
+
+            const { data } = await axios.get('/api/user/data', {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+
+            if (data.success) {
+                setUserData(data.user);
+                setCartItems(data.user.cart);
+            } else {
+                toast.error(data.message);
+            }
+
+        } catch (error) {
+            toast.error(error?.response?.data?.message || error.message || "Something went wrong");
+        }
+    };
 
     const addToCart = async (itemId) => {
-
         let cartData = structuredClone(cartItems);
         if (cartData[itemId]) {
             cartData[itemId] += 1;
-        }
-        else {
+        } else {
             cartData[itemId] = 1;
         }
         setCartItems(cartData);
-
-    }
+    };
 
     const updateCartQuantity = async (itemId, quantity) => {
-
         let cartData = structuredClone(cartItems);
         if (quantity === 0) {
             delete cartData[itemId];
         } else {
             cartData[itemId] = quantity;
         }
-        setCartItems(cartData)
-
-    }
+        setCartItems(cartData);
+    };
 
     const getCartCount = () => {
         let totalCount = 0;
@@ -63,29 +85,31 @@ export const AppContextProvider = (props) => {
             }
         }
         return totalCount;
-    }
+    };
 
     const getCartAmount = () => {
         let totalAmount = 0;
         for (const items in cartItems) {
             let itemInfo = products.find((product) => product._id === items);
-            if (cartItems[items] > 0) {
+            if (cartItems[items] > 0 && itemInfo) {
                 totalAmount += itemInfo.offerPrice * cartItems[items];
             }
         }
         return Math.floor(totalAmount * 100) / 100;
-    }
+    };
 
     useEffect(() => {
-        fetchProductData()
-    }, [])
+        fetchProductData();
+    }, []);
 
     useEffect(() => {
-        fetchUserData()
-    }, [])
+        if (user) {
+            fetchUserData();
+        }
+    }, [user]);
 
     const value = {
-        user,
+        user, getToken,
         currency, router,
         isSeller, setIsSeller,
         userData, fetchUserData,
@@ -93,11 +117,11 @@ export const AppContextProvider = (props) => {
         cartItems, setCartItems,
         addToCart, updateCartQuantity,
         getCartCount, getCartAmount
-    }
+    };
 
     return (
         <AppContext.Provider value={value}>
             {props.children}
         </AppContext.Provider>
-    )
-}
+    );
+};
